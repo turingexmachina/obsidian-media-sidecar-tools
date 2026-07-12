@@ -115,6 +115,11 @@ Issues and pull requests are welcome. Please open an issue first to discuss
 substantial changes. When contributing code, run `npm run build` and confirm
 the plugin loads without errors in Obsidian before submitting a PR.
 
+Releases are cut by running `npm version patch` (or `minor`/`major`), then
+pushing the commit and the tag it creates — a
+[GitHub Actions workflow](.github/workflows/release.yml) builds the plugin
+and publishes the matching GitHub release automatically.
+
 ## License
 
 MIT © turingexmachina

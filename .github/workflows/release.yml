@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Verify tag matches manifest.json version
+        run: |
+          manifest_version=$(node -p "require('./manifest.json').version")
+          if [ "$manifest_version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match manifest.json version $manifest_version"
+            exit 1
+          fi
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            main.js manifest.json versions.json \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes
