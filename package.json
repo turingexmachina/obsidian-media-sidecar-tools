@@ -1,0 +1,19 @@
+{
+	"name": "obsidian-media-sidecar-tools",
+	"version": "1.0.0",
+	"description": "Create sidecar notes for media with Ctrl+Click, and hide the original media in file navigation if wanted.",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "node esbuild.config.mjs production"
+	},
+	"license": "MIT",
+	"devDependencies": {
+		"esbuild": "^0.20.2",
+		"obsidian": "1.7.2",
+		"typescript": "^5.4.5"
+	},
+	"allowScripts": {
+		"esbuild@0.20.2": true
+	}
+}
