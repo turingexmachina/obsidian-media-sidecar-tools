@@ -95,12 +95,11 @@ Open **Settings → Media Sidecar Tools** to configure:
 The plugin does no per-frame or per-render work. On load, after any file is
 created, deleted, or renamed, and whenever the extension list changes, it
 scans the vault's note and file lists (both cached by Obsidian) to find
-attachments that match a note's name in the same folder, then writes a
-single CSS rule targeting those files' `data-path` attributes in the
-navigation pane. Rescans triggered by vault events are debounced so bulk
-operations, like moving a folder, only trigger one update. Because hiding is
-done with CSS rather than by walking the DOM tree, performance stays
-constant regardless of vault size.
+attachments that match a note's name in the same folder, then toggles a CSS
+class on those files' existing navigation-pane elements. Rescans triggered
+by vault events are debounced so bulk operations, like moving a folder, only
+trigger one update, and the actual hide/show step is a direct lookup rather
+than a search through the DOM.
 
 ## Thanks
 

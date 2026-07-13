@@ -1,4 +1,4 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, TFile, normalizePath } from "obsidian";
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
 
 const DEFAULT_EXTENSIONS = [
 	"jpg",
@@ -22,7 +22,7 @@ const DEFAULT_EXTENSIONS = [
 ];
 
 const REBUILD_DEBOUNCE_MS = 200;
-const STYLE_EL_ID = "media-sidecar-tools-styles";
+const HIDDEN_CLASS = "media-sidecar-tools-hidden";
 
 interface MediaSidecarToolsSettings {
 	extensions: string[];
@@ -34,8 +34,13 @@ const DEFAULT_SETTINGS: MediaSidecarToolsSettings = {
 	ctrlClickCreatesNote: true,
 };
 
-function escapeAttributeValue(value: string): string {
-	return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+interface FileExplorerFileItem {
+	el: HTMLElement;
+	selfEl: HTMLElement;
+}
+
+interface FileExplorerView {
+	fileItems: Record<string, FileExplorerFileItem>;
 }
 
 function parseExtensionsInput(value: string): string[] {
@@ -53,15 +58,10 @@ function parseExtensionsInput(value: string): string[] {
 
 export default class MediaSidecarToolsPlugin extends Plugin {
 	settings: MediaSidecarToolsSettings = DEFAULT_SETTINGS;
-	private styleEl: HTMLStyleElement | null = null;
 	private rebuildTimer: number | null = null;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
-
-		this.styleEl = document.createElement("style");
-		this.styleEl.id = STYLE_EL_ID;
-		document.head.appendChild(this.styleEl);
 
 		this.addSettingTab(new MediaSidecarToolsSettingTab(this.app, this));
 
@@ -70,8 +70,14 @@ export default class MediaSidecarToolsPlugin extends Plugin {
 		this.registerEvent(this.app.vault.on("create", () => this.scheduleRebuild()));
 		this.registerEvent(this.app.vault.on("delete", () => this.scheduleRebuild()));
 		this.registerEvent(this.app.vault.on("rename", () => this.scheduleRebuild()));
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleRebuild()));
 
-		this.registerDomEvent(document, "click", this.handleClick, true);
+		this.registerDomEvent(activeDocument, "click", this.handleClick, true);
+		this.registerEvent(
+			this.app.workspace.on("window-open", (_workspaceWindow, win) => {
+				this.registerDomEvent(win.document, "click", this.handleClick, true);
+			})
+		);
 	}
 
 	onunload(): void {
@@ -79,8 +85,7 @@ export default class MediaSidecarToolsPlugin extends Plugin {
 			window.clearTimeout(this.rebuildTimer);
 			this.rebuildTimer = null;
 		}
-		this.styleEl?.remove();
-		this.styleEl = null;
+		this.applyVisibility(new Set());
 	}
 
 	async loadSettings(): Promise<void> {
@@ -96,8 +101,6 @@ export default class MediaSidecarToolsPlugin extends Plugin {
 	}
 
 	rebuild(): void {
-		if (!this.styleEl) return;
-
 		const extensions = new Set(this.settings.extensions);
 
 		const notesByFolder = new Map<string, Set<string>>();
@@ -111,25 +114,27 @@ export default class MediaSidecarToolsPlugin extends Plugin {
 			names.add(file.basename);
 		}
 
-		const hiddenPaths: string[] = [];
+		const hiddenPaths = new Set<string>();
 		for (const file of this.app.vault.getFiles()) {
 			if (!(file instanceof TFile)) continue;
 			if (!extensions.has(file.extension.toLowerCase())) continue;
 			const folder = file.parent ? file.parent.path : "";
 			if (notesByFolder.get(folder)?.has(file.basename)) {
-				hiddenPaths.push(file.path);
+				hiddenPaths.add(file.path);
 			}
 		}
 
-		if (hiddenPaths.length === 0) {
-			this.styleEl.textContent = "";
-			return;
-		}
+		this.applyVisibility(hiddenPaths);
+	}
 
-		const selectors = hiddenPaths
-			.map((path) => `.nav-file-title[data-path="${escapeAttributeValue(path)}"]`)
-			.join(",\n");
-		this.styleEl.textContent = `${selectors} {\n\tdisplay: none !important;\n}`;
+	private applyVisibility(hiddenPaths: Set<string>): void {
+		const leaves: WorkspaceLeaf[] = this.app.workspace.getLeavesOfType("file-explorer");
+		for (const leaf of leaves) {
+			const view = leaf.view as unknown as FileExplorerView;
+			for (const [path, item] of Object.entries(view.fileItems ?? {})) {
+				item.selfEl.classList.toggle(HIDDEN_CLASS, hiddenPaths.has(path));
+			}
+		}
 	}
 
 	private scheduleRebuild(): void {
