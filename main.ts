@@ -180,7 +180,8 @@ export default class MediaSidecarToolsPlugin extends Plugin {
 		try {
 			const link = this.app.fileManager.generateMarkdownLink(file, notePath);
 			const embed = link.startsWith("!") ? link : `!${link}`;
-			await this.app.vault.create(notePath, `${embed}\n`);
+			const note = await this.app.vault.create(notePath, `${embed}\n`);
+			await this.app.workspace.getLeaf(false).openFile(note);
 		} catch (error) {
 			new Notice(`Media Sidecar Tools: could not create ${notePath}`);
 			console.error("Media Sidecar Tools: failed to create paired note", error);
