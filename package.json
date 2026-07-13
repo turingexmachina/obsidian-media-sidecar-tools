@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-media-sidecar-tools",
-	"version": "1.0.1",
+	"version": "1.1.0",
 	"description": "Create sidecar notes for media with Ctrl+Click, and hide the original media in file navigation if wanted.",
 	"main": "main.js",
 	"scripts": {
