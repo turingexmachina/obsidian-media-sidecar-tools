@@ -78,12 +78,23 @@ plugin hides `Photo.jpg` from the navigation automatically. If a note with
 that name already exists, Ctrl+Click does nothing. This behavior can be
 turned off in [Settings](#settings).
 
+### Renaming and moving
+
+Renaming or moving a media file also renames or moves the note paired with
+it, and doing the same to a note carries the media files paired with it —
+so renaming `Photo.jpg` to `Beach.jpg` turns `Photo.md` into `Beach.md`,
+and vice versa. Links and embeds are rewritten by Obsidian as usual. If a
+file already exists at the destination, the pair is left alone and a notice
+explains why. This behavior can be turned off in [Settings](#settings).
+
 ## Settings
 
 Open **Settings → Media Sidecar Tools** to configure:
 
 - **Create note with Ctrl+Click** — enabled by default; disable it to turn
   off the [Ctrl+Click behavior](#create-a-note-with-ctrlclick) above.
+- **Keep pairs in sync when renaming** — enabled by default; disable it to
+  turn off the [rename syncing](#renaming-and-moving) above.
 - **File extensions** — the attachment extensions the plugin looks for,
   edited as a list separated by commas or new lines. Defaults to:
   - Images: `jpg`, `jpeg`, `png`, `webp`, `gif`, `avif`, `bmp`, `svg`
@@ -100,6 +111,12 @@ class on those files' existing navigation-pane elements. Rescans triggered
 by vault events are debounced so bulk operations, like moving a folder, only
 trigger one update, and the actual hide/show step is a direct lookup rather
 than a search through the DOM.
+
+Keeping a pair in sync uses the same rename events: when one half moves, the
+plugin looks up the other half at its old path and renames it through
+Obsidian's own file manager, so links and embeds are updated the way they
+would be for a manual rename. Renames the plugin itself performs are ignored
+by the handler, so the two halves can't chase each other.
 
 ## Thanks
 

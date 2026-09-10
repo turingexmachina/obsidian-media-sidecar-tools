@@ -1,4 +1,14 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, TFile, WorkspaceLeaf, normalizePath } from "obsidian";
+import {
+	App,
+	Notice,
+	Plugin,
+	PluginSettingTab,
+	Setting,
+	TFile,
+	TFolder,
+	WorkspaceLeaf,
+	normalizePath,
+} from "obsidian";
 
 const DEFAULT_EXTENSIONS = [
 	"jpg",
@@ -27,11 +37,13 @@ const HIDDEN_CLASS = "media-sidecar-tools-hidden";
 interface MediaSidecarToolsSettings {
 	extensions: string[];
 	ctrlClickCreatesNote: boolean;
+	syncRenames: boolean;
 }
 
 const DEFAULT_SETTINGS: MediaSidecarToolsSettings = {
 	extensions: [...DEFAULT_EXTENSIONS],
 	ctrlClickCreatesNote: true,
+	syncRenames: true,
 };
 
 interface FileExplorerFileItem {
@@ -56,9 +68,26 @@ function parseExtensionsInput(value: string): string[] {
 	return result;
 }
 
+function splitPath(path: string): { folder: string; basename: string; extension: string } {
+	const slash = path.lastIndexOf("/");
+	const folder = slash === -1 ? "" : path.slice(0, slash);
+	const name = slash === -1 ? path : path.slice(slash + 1);
+	const dot = name.lastIndexOf(".");
+	return {
+		folder,
+		basename: dot === -1 ? name : name.slice(0, dot),
+		extension: dot === -1 ? "" : name.slice(dot + 1).toLowerCase(),
+	};
+}
+
+function joinPath(folder: string, name: string): string {
+	return normalizePath(folder ? `${folder}/${name}` : name);
+}
+
 export default class MediaSidecarToolsPlugin extends Plugin {
 	settings: MediaSidecarToolsSettings = DEFAULT_SETTINGS;
 	private rebuildTimer: number | null = null;
+	private readonly pendingRenames = new Set<string>();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -69,7 +98,12 @@ export default class MediaSidecarToolsPlugin extends Plugin {
 
 		this.registerEvent(this.app.vault.on("create", () => this.scheduleRebuild()));
 		this.registerEvent(this.app.vault.on("delete", () => this.scheduleRebuild()));
-		this.registerEvent(this.app.vault.on("rename", () => this.scheduleRebuild()));
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				this.scheduleRebuild();
+				if (file instanceof TFile) void this.syncPairedRename(file, oldPath);
+			})
+		);
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleRebuild()));
 
 		this.registerDomEvent(activeDocument, "click", this.handleClick, true);
@@ -93,6 +127,7 @@ export default class MediaSidecarToolsPlugin extends Plugin {
 		this.settings = {
 			extensions: data?.extensions?.length ? data.extensions : [...DEFAULT_EXTENSIONS],
 			ctrlClickCreatesNote: data?.ctrlClickCreatesNote ?? DEFAULT_SETTINGS.ctrlClickCreatesNote,
+			syncRenames: data?.syncRenames ?? DEFAULT_SETTINGS.syncRenames,
 		};
 	}
 
@@ -145,6 +180,62 @@ export default class MediaSidecarToolsPlugin extends Plugin {
 			this.rebuildTimer = null;
 			this.rebuild();
 		}, REBUILD_DEBOUNCE_MS);
+	}
+
+	private async syncPairedRename(file: TFile, oldPath: string): Promise<void> {
+		if (!this.settings.syncRenames) return;
+		if (this.pendingRenames.has(oldPath) || this.pendingRenames.has(file.path)) return;
+
+		const extensions = new Set(this.settings.extensions.map((ext) => ext.toLowerCase()));
+		const previous = splitPath(oldPath);
+		const currentExtension = file.extension.toLowerCase();
+
+		let partners: TFile[];
+		if (previous.extension === "md") {
+			if (currentExtension !== "md") return;
+			partners = this.pairedMedia(previous.folder, previous.basename, extensions);
+		} else if (extensions.has(previous.extension)) {
+			if (!extensions.has(currentExtension)) return;
+			const note = this.app.vault.getAbstractFileByPath(
+				joinPath(previous.folder, `${previous.basename}.md`)
+			);
+			partners = note instanceof TFile ? [note] : [];
+		} else {
+			return;
+		}
+
+		const folder = file.parent && !file.parent.isRoot() ? file.parent.path : "";
+		for (const partner of partners) {
+			const target = joinPath(folder, `${file.basename}.${partner.extension}`);
+			if (target === partner.path) continue;
+			if (this.app.vault.getAbstractFileByPath(target)) {
+				new Notice(`Media Sidecar Tools: ${target} already exists`);
+				continue;
+			}
+
+			this.pendingRenames.add(partner.path);
+			this.pendingRenames.add(target);
+			try {
+				await this.app.fileManager.renameFile(partner, target);
+			} catch (error) {
+				new Notice(`Media Sidecar Tools: could not rename ${partner.path}`);
+				console.error("Media Sidecar Tools: failed to rename paired file", error);
+			} finally {
+				this.pendingRenames.delete(partner.path);
+				this.pendingRenames.delete(target);
+			}
+		}
+	}
+
+	private pairedMedia(folder: string, basename: string, extensions: Set<string>): TFile[] {
+		const parent = this.app.vault.getAbstractFileByPath(folder || "/");
+		if (!(parent instanceof TFolder)) return [];
+		return parent.children.filter(
+			(child): child is TFile =>
+				child instanceof TFile &&
+				child.basename === basename &&
+				extensions.has(child.extension.toLowerCase())
+		);
 	}
 
 	private handleClick = (evt: MouseEvent): void => {
@@ -209,6 +300,18 @@ class MediaSidecarToolsSettingTab extends PluginSettingTab {
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.ctrlClickCreatesNote).onChange(async (value) => {
 					this.plugin.settings.ctrlClickCreatesNote = value;
+					await this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("Keep pairs in sync when renaming")
+			.setDesc(
+				"When enabled, renaming or moving a media file also renames or moves its note, and renaming or moving a note does the same to the media files paired with it."
+			)
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.syncRenames).onChange(async (value) => {
+					this.plugin.settings.syncRenames = value;
 					await this.plugin.saveSettings();
 				})
 			);
